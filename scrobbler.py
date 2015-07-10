@@ -60,7 +60,7 @@ class Scrobbler(object):
     def receivedNotification_(self, notification):
         log.debug("Got a notification: {}".format(notification.name()))
         userinfo = dict(notification.userInfo())
-        log.debug(pformat(userinfo))
+        # log.debug(pformat(userinfo))
         state = userinfo.get("Player State")
         if state == "Playing":
             should_scrobble = self.update_now_playing(userinfo)
@@ -93,15 +93,9 @@ class Scrobbler(object):
     def prepare_to_scrobble(self, userinfo):
         log.debug("prepare_to_scrobble")
         self.cancel_scrobble_timer()
-        persistent_id = userinfo.get("PersistentID")
-        if persistent_id is None:
+        if userinfo.get("PersistentID") is None:
             log.warning("Track being played doesn't have a PersistentID, so can't prepare to scrobble it!")
             return
-        if persistent_id < 0:
-            # PyObjC thinks this is a signed long, but actually it's unsigned, so convert it
-            persistent_id += 2**64
-        persistent_id = "{:016X}".format(persistent_id)
-        log.debug("Persistent ID of track to be scrobbled: {}".format(persistent_id))
 
         # We need to wait a bit for a certain amount of the track to be played before scrobbling it.
         # The delay is half the track's length or SCROBBLER_HALFWAY_THRESHOLD, whichever is sooner.
@@ -124,7 +118,7 @@ class Scrobbler(object):
             timeout,
             self,
             objc.selector(self.scrobbleTimerFired_, signature=b"v@:@"),
-            persistent_id,
+            userinfo,
             False
         )
 
@@ -145,23 +139,46 @@ class Scrobbler(object):
         if self.itunes.playerState() != ITUNES_PLAYER_STATE_PLAYING:
             log.debug("iTunes isn't playing, not scrobbling")
             return
+        userinfo = timer.userInfo()
+
+        expected_persistent_id = userinfo.get("PersistentID")
+        if expected_persistent_id < 0:
+            # PyObjC thinks this is a signed long, but actually it's unsigned, so convert it
+            expected_persistent_id += 2**64
+        expected_persistent_id = "{:016X}".format(expected_persistent_id)
+        log.debug("Expected persistent ID of track to be scrobbled: {}".format(expected_persistent_id))
+
         current_track = self.itunes.currentTrack()
-        expected_persistent_id = timer.userInfo()
+        scrobble_from_current_track = True
         actual_persistent_id = current_track.persistentID()
-        if actual_persistent_id != expected_persistent_id:
+        if actual_persistent_id is not None and actual_persistent_id != expected_persistent_id:
             log.warning("Track now playing is different to the one that prompted timer, not scrobbling: {} (expected) vs {} (actual)".format(expected_persistent_id, actual_persistent_id))
             return
-        # at this point the correct track is playing, so we should scrobble it
-        log.debug("Correct track is playing, going to scrobble it")
-        kwargs = {
-            'artist': current_track.artist(),
-            'title': current_track.name(),
-            'album': current_track.album(),
-            'album_artist': current_track.albumArtist(),
-            'track_number': current_track.trackNumber(),
-            'duration': int(current_track.duration()),
-            'timestamp': int(time.time() - self.itunes.playerPosition())
-        }
+        elif actual_persistent_id is None:
+            log.warning("Track playing has no persistent ID, assuming it's an Apple Music stream and scrobbling based on metadata from original notification")
+            scrobble_from_current_track = False
+        else:
+            # at this point we know the correct track is playing
+            log.debug("Correct track is playing, going to scrobble it")
+        if scrobble_from_current_track:
+            kwargs = {
+                'artist': current_track.artist(),
+                'title': current_track.name(),
+                'album': current_track.album(),
+                'album_artist': current_track.albumArtist(),
+                'track_number': current_track.trackNumber(),
+                'duration': int(current_track.duration()),
+            }
+        else:
+            kwargs = {
+                'artist': userinfo.get("Artist"),
+                'title': userinfo.get("Name"),
+                'album': userinfo.get("Album"),
+                'album_artist': userinfo.get("Album Artist"),
+                'track_number': userinfo.get("Track Number"),
+                'duration': userinfo.get("Total Time", 0) // 1000 or None,
+            }
+        kwargs['timestamp'] = int(time.time() - self.itunes.playerPosition())
         log.debug("Going to scrobble with kwargs:\n{}".format(pformat(kwargs)))
         self.lastfm.scrobble(**kwargs)
         log.debug("done.")
