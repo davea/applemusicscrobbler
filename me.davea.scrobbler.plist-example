@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/Users/USER/.virtualenvs/scrobbler/bin/python</string>
+		<string>/Users/USER/Code/scrobbler/scrobbler.py</string>
+	</array>
+	<key>LimitLoadToSessionType</key>
+	<string>Aqua</string>
+	<key>Label</key>
+	<string>me.davea.scrobbler</string>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<true/>
+	<key>StandardErrorPath</key>
+	<string>/Users/USER/Library/Logs/scrobbler/error.log</string>
+	<key>StandardOutPath</key>
+	<string>/Users/USER/Library/Logs/scrobbler/output.log</string>
+</dict>
+</plist>
