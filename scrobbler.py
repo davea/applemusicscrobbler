@@ -24,6 +24,8 @@ ITUNES_PLAYER_STATE_PLAYING = int.from_bytes(b'kPSP', byteorder="big")
 SCROBBLER_MIN_TRACK_LENGTH = 30
 # Scrobble after track halfway point or this many seconds since starting, whichever is first.
 SCROBBLER_HALFWAY_THRESHOLD = 240
+# How many times to try scrobbling each track to last.fm
+SCROBBLE_MAX_ATTEMPTS = 5
 
 class Scrobbler(object):
     itunes = None
@@ -86,9 +88,18 @@ class Scrobbler(object):
         if not kwargs['artist'] or not kwargs['title']:
             log.debug("Artist or title are missing, so ignoring...")
             return False
-        log.debug("Updating now playing with kwargs:\n{}".format(pformat(kwargs)))
-        self.lastfm.update_now_playing(**kwargs)
-        return True
+        for attempt in range(SCROBBLE_MAX_ATTEMPTS):
+            try:
+                log.debug("Attempt {}/{} to update now playing with kwargs:\n{}".format(attempt+1, SCROBBLE_MAX_ATTEMPTS, pformat(kwargs)))
+                self.lastfm.update_now_playing(**kwargs)
+                log.debug("done.")
+                return True
+            except pylast.WSError:
+                log.exception("Couldn't update now playing, waiting 5 seconds and trying again.")
+                time.sleep(5)
+        else:
+            log.error("Couldn't update now playing after {} attempts!".format(SCROBBLE_MAX_ATTEMPTS))
+        return False
 
     def prepare_to_scrobble(self, userinfo):
         log.debug("prepare_to_scrobble")
@@ -179,9 +190,17 @@ class Scrobbler(object):
                 'duration': userinfo.get("Total Time", 0) // 1000 or None,
             }
         kwargs['timestamp'] = int(time.time() - self.itunes.playerPosition())
-        log.debug("Going to scrobble with kwargs:\n{}".format(pformat(kwargs)))
-        self.lastfm.scrobble(**kwargs)
-        log.debug("done.")
+        for attempt in range(SCROBBLE_MAX_ATTEMPTS):
+            try:
+                log.debug("Attempt {}/{} to scrobble with kwargs:\n{}".format(attempt+1, SCROBBLE_MAX_ATTEMPTS, pformat(kwargs)))
+                self.lastfm.scrobble(**kwargs)
+                log.debug("done.")
+                break
+            except pylast.WSError:
+                log.exception("Couldn't scrobble, waiting 5 seconds and trying again.")
+                time.sleep(5)
+        else:
+            log.error("Couldn't scrobble after {} attempts!".format(SCROBBLE_MAX_ATTEMPTS))
 
 
 def main():
